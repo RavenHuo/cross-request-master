@@ -188,7 +188,23 @@ function getStatusText(status) {
 
 // 处理跨域请求
 async function handleCrossOriginRequest(request) {
-  const { url, method = 'GET', headers = {}, body, timeout = 30000 } = request;
+  const { url, method = 'GET', headers = {}, body, timeout = 30000, cookies } = request;
+
+  // 将用户配置的 cookie 写入目标域名，配合 credentials: 'include' 自动携带
+  if (cookies && Array.isArray(cookies) && cookies.length) {
+    try {
+      const urlObj = new URL(url);
+      const cookieUrl = urlObj.protocol + '//' + urlObj.hostname + '/';
+      await Promise.all(cookies.map(({ name, value }) =>
+        new Promise((resolve) => {
+          chrome.cookies.set({ url: cookieUrl, name, value, path: '/' }, () => resolve());
+        })
+      ));
+      console.log('[Background] Cookie 已写入:', cookies.map(c => c.name));
+    } catch (e) {
+      console.warn('[Background] Cookie 写入失败:', e.message);
+    }
+  }
 
   // 支持 FormData/File/Blob 的序列化传输（Issue #14）
   const base64ToUint8Array = (base64) => {

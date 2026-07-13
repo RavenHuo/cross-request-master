@@ -207,6 +207,18 @@
     }
   };
 
+  const readCookieEntries = () => {
+    const key = buildFixedHeaderStorageKey()
+      ? buildFixedHeaderStorageKey().replace('__crm_fixed_headers_', '__crm_fixed_cookies_')
+      : '__crm_fixed_cookies_unknown';
+    try {
+      const raw = win.localStorage ? win.localStorage.getItem(key) : '';
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+
   const mergeFixedHeaders = (headers, entries) => {
     if (helpers.mergeFixedHeaders) {
       return helpers.mergeFixedHeaders(headers, entries, { preferExisting: true });
@@ -398,7 +410,8 @@
         method,
         headers: applyFixedHeaders(options.headers || {}),
         body,
-        timeout: options.timeout || 30000
+        timeout: options.timeout || 30000,
+        cookies: readCookieEntries()
       };
 
       const pending = this.pendingRequests.get(id);
@@ -663,7 +676,8 @@
         method: options.method || options.type || 'GET',
         headers: options.headers || {},
         data: options.data || options.body,
-        timeout: options.timeout || 30000
+        timeout: options.timeout || 30000,
+        cookies: readCookieEntries()
       };
 
       requestData.headers = applyFixedHeaders(requestData.headers);
