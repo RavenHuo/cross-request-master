@@ -408,30 +408,29 @@ const CrossRequest = {
       return `__crm_fixed_headers_${host}`;
     };
 
-    const buildCookieStorageKey = () => {
-      const host = location && location.host ? location.host : location.hostname || 'unknown';
-      return '__crm_fixed_cookies_' + host;
+    const getHistoryKey = () => {
+      try {
+        const path = location.pathname;
+        const match = path.match(/\/project\/(\d+)\/interface\/api\/(\d+)/);
+        if (match) return '__crm_req_history_' + match[1] + '_' + match[2];
+        const projectMatch = path.match(/\/project\/(\d+)/);
+        if (projectMatch) return '__crm_req_history_' + projectMatch[1];
+      } catch (e) { /* ignore */ }
+      return null;
     };
 
-    const readCookieEntries = () => {
+    const readHistory = () => {
+      const key = getHistoryKey();
+      if (!key) return [];
       try {
-        const raw = localStorage.getItem(buildCookieStorageKey());
+        const raw = localStorage.getItem(key);
         return raw ? JSON.parse(raw) : [];
-      } catch (e) {
-        return [];
-      }
+      } catch (e) { return []; }
     };
 
-    const saveCookieEntries = (entries) => {
-      try {
-        if (!entries || !entries.length) {
-          localStorage.removeItem(buildCookieStorageKey());
-          return;
-        }
-        localStorage.setItem(buildCookieStorageKey(), JSON.stringify(entries));
-      } catch (e) {
-        /* ignore */
-      }
+    const clearHistory = () => {
+      const key = getHistoryKey();
+      if (key) localStorage.removeItem(key);
     };
 
     const normalizeHeaderEntries = (input) => {
@@ -542,7 +541,7 @@ const CrossRequest = {
         <div class="crm-mask"></div>
         <div class="crm-panel" role="dialog" aria-modal="true">
           <div class="crm-header">
-            <div class="crm-title">Cookie & Header</div>
+            <div class="crm-title">请求历史</div>
             <button class="crm-close" type="button" aria-label="Close">×</button>
           </div>
           <div class="crm-body"></div>
@@ -684,219 +683,90 @@ const CrossRequest = {
     };
 
     const openHeaderModal = () => {
+      const escHtml = (s) => {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      };
+
       ensureStyle();
       ensureHeaderModal();
 
       const modal = document.getElementById(HEADER_MODAL_ID);
       const body = modal.querySelector('.crm-body');
       if (!body) return;
-
       body.innerHTML = '';
 
-      // ===== Cookie 区域 =====
-      const cookieHint = document.createElement('div');
-      cookieHint.className = 'crm-hint';
-      cookieHint.textContent = 'Cookie 写入目标域名，请求时自动携带（本地保存）。';
-      body.appendChild(cookieHint);
+      const history = readHistory();
 
-      const cookieList = document.createElement('div');
-      const existingCookies = readCookieEntries();
-
-      const addCookieRow = (entry = {}) => {
-        const row = document.createElement('div');
-        row.className = 'crm-header-row crm-cookie-row';
-
-        const keyInput = document.createElement('input');
-        keyInput.className = 'crm-input crm-header-key';
-        keyInput.type = 'text';
-        keyInput.placeholder = 'Cookie 名称';
-        keyInput.autocomplete = 'off';
-        keyInput.spellcheck = false;
-        keyInput.value = entry.name != null ? String(entry.name) : '';
-
-        const valueInput = document.createElement('input');
-        valueInput.className = 'crm-input crm-header-value';
-        valueInput.type = 'text';
-        valueInput.placeholder = 'Cookie 值';
-        valueInput.autocomplete = 'off';
-        valueInput.spellcheck = false;
-        valueInput.value = entry.value != null ? String(entry.value) : '';
-
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'crm-btn crm-danger';
-        removeBtn.textContent = '删除';
-        removeBtn.addEventListener('click', () => row.remove());
-
-        row.appendChild(keyInput);
-        row.appendChild(valueInput);
-        row.appendChild(removeBtn);
-        cookieList.appendChild(row);
-      };
-
-      if (existingCookies.length) {
-        existingCookies.forEach(addCookieRow);
+      if (!history.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'text-align:center;padding:20px;color:#999;';
+        empty.textContent = '暂无请求历史';
+        body.appendChild(empty);
       } else {
-        addCookieRow();
+        history.forEach((entry, index) => {
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:8px 0;border-bottom:1px solid #f0f0f0;';
+
+          const time = new Date(entry.timestamp);
+          const timeStr = time.toLocaleString('zh-CN');
+
+          const methodColor = { GET: '#28a745', POST: '#1677ff', PUT: '#fa8c16', DELETE: '#dc3545', PATCH: '#722ed1' }[entry.method] || '#666';
+          const statusColor = entry.response.status < 300 ? '#28a745' : entry.response.status < 400 ? '#1677ff' : entry.response.status < 500 ? '#fa8c16' : '#dc3545';
+
+          const header = document.createElement('div');
+          header.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;';
+          header.innerHTML = `
+            <span style="display:inline-block;min-width:48px;padding:1px 6px;border-radius:4px;background:${methodColor};color:#fff;font-size:11px;font-weight:600;text-align:center;">${escHtml(entry.method)}</span>
+            <span style="min-width:32px;font-size:12px;font-weight:600;color:${statusColor};">${entry.response.status}</span>
+            <span style="flex:1;font-size:12px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(entry.url)}</span>
+            <span style="font-size:11px;color:#999;white-space:nowrap;">${timeStr}</span>
+          `;
+          item.appendChild(header);
+
+          const detail = document.createElement('div');
+          detail.style.cssText = 'display:none;margin-top:8px;padding:8px;background:#f8f9fa;border-radius:4px;font-size:12px;';
+          detail.innerHTML = `
+            <div style="margin-bottom:6px;"><b>URL:</b> ${escHtml(entry.url)}</div>
+            <div style="margin-bottom:6px;"><b>Headers:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;">${escHtml(JSON.stringify(entry.headers, null, 2))}</pre></div>
+            <div style="margin-bottom:6px;"><b>Body:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;">${escHtml(typeof entry.body === 'string' ? entry.body : JSON.stringify(entry.body, null, 2))}</pre></div>
+            <div style="margin-bottom:6px;"><b>Response:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;max-height:160px;overflow:auto;">${escHtml(String(entry.response.body || ''))}</pre></div>
+          `;
+          item.appendChild(detail);
+
+          header.addEventListener('click', () => {
+            detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+          });
+
+          body.appendChild(item);
+        });
       }
-
-      const cookieTools = document.createElement('div');
-      cookieTools.className = 'crm-tools';
-
-      const addCookieBtn = document.createElement('button');
-      addCookieBtn.type = 'button';
-      addCookieBtn.className = 'crm-btn';
-      addCookieBtn.textContent = '新增 Cookie';
-      addCookieBtn.addEventListener('click', () => addCookieRow());
-
-      const clearCookieBtn = document.createElement('button');
-      clearCookieBtn.type = 'button';
-      clearCookieBtn.className = 'crm-btn';
-      clearCookieBtn.textContent = '清空 Cookie';
-      clearCookieBtn.addEventListener('click', () => {
-        cookieList.innerHTML = '';
-        addCookieRow();
-      });
-
-      cookieTools.appendChild(addCookieBtn);
-      cookieTools.appendChild(clearCookieBtn);
-
-      body.appendChild(cookieList);
-      body.appendChild(cookieTools);
-
-      // 分隔线
-      const divider = document.createElement('hr');
-      divider.style.cssText = 'margin: 16px 0; border: none; border-top: 1px solid #eee;';
-      body.appendChild(divider);
-
-      // ===== Header 区域 =====
-      const hint = document.createElement('div');
-      hint.className = 'crm-hint';
-      hint.textContent = '固定 Header 会自动追加到当前站点的跨域请求（本地保存）。';
-      body.appendChild(hint);
-
-      const list = document.createElement('div');
-      const existing = readFixedHeaderEntries();
-
-      const addRow = (entry = {}) => {
-        const row = document.createElement('div');
-        row.className = 'crm-header-row';
-
-        const keyInput = document.createElement('input');
-        keyInput.className = 'crm-input crm-header-key';
-        keyInput.type = 'text';
-        keyInput.placeholder = 'Header 名称';
-        keyInput.autocomplete = 'off';
-        keyInput.spellcheck = false;
-        keyInput.value = entry.key != null ? String(entry.key) : '';
-
-        const valueInput = document.createElement('input');
-        valueInput.className = 'crm-input crm-header-value';
-        valueInput.type = 'text';
-        valueInput.placeholder = 'Header 值';
-        valueInput.autocomplete = 'off';
-        valueInput.spellcheck = false;
-        valueInput.value = entry.value != null ? String(entry.value) : '';
-
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'crm-btn crm-danger';
-        removeBtn.textContent = '删除';
-        removeBtn.addEventListener('click', () => row.remove());
-
-        row.appendChild(keyInput);
-        row.appendChild(valueInput);
-        row.appendChild(removeBtn);
-        list.appendChild(row);
-      };
-
-      if (existing.length) {
-        existing.forEach((entry) => addRow(entry));
-      } else {
-        addRow();
-      }
-
-      const tools = document.createElement('div');
-      tools.className = 'crm-tools';
-
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'crm-btn';
-      addBtn.textContent = '新增 Header';
-      addBtn.addEventListener('click', () => addRow());
-
-      const clearBtn = document.createElement('button');
-      clearBtn.type = 'button';
-      clearBtn.className = 'crm-btn';
-      clearBtn.textContent = '清空';
-      clearBtn.addEventListener('click', () => {
-        list.innerHTML = '';
-        addRow();
-      });
-
-      tools.appendChild(addBtn);
-      tools.appendChild(clearBtn);
 
       const actions = document.createElement('div');
       actions.className = 'crm-actions';
+      actions.style.marginTop = '12px';
 
-      const cancelBtn = document.createElement('button');
-      cancelBtn.type = 'button';
-      cancelBtn.className = 'crm-btn';
-      cancelBtn.textContent = '取消';
-      cancelBtn.addEventListener('click', () => {
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'crm-btn';
+      closeBtn.textContent = '关闭';
+      closeBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'crm-btn crm-danger';
+      clearBtn.textContent = '清空历史';
+      clearBtn.addEventListener('click', () => {
+        clearHistory();
         modal.style.display = 'none';
       });
 
-      const okBtn = document.createElement('button');
-      okBtn.type = 'button';
-      okBtn.className = 'crm-btn crm-primary';
-      okBtn.textContent = '保存';
-      okBtn.addEventListener('click', () => {
-        // 保存 Cookie
-        const cookieRows = Array.from(cookieList.querySelectorAll('.crm-cookie-row'));
-        const cookieMap = new Map();
-        cookieRows.forEach((row) => {
-          const inputs = row.querySelectorAll('input');
-          const nameInput = inputs[0];
-          const valueInput = inputs[1];
-          const rawName = nameInput ? String(nameInput.value || '').trim() : '';
-          const rawValue = valueInput ? String(valueInput.value || '') : '';
-          if (!rawName) return;
-          cookieMap.set(rawName, { name: rawName, value: rawValue });
-        });
-        saveCookieEntries(Array.from(cookieMap.values()));
-
-        // 保存 Header
-        const rows = Array.from(list.querySelectorAll('.crm-header-row'));
-        const map = new Map();
-        rows.forEach((row) => {
-          const inputs = row.querySelectorAll('input');
-          const keyInput = inputs[0];
-          const valueInput = inputs[1];
-          const rawKey = keyInput ? String(keyInput.value || '').trim() : '';
-          const rawValue = valueInput ? String(valueInput.value || '') : '';
-          if (!rawKey) return;
-          const lower = rawKey.toLowerCase();
-          if (map.has(lower)) {
-            map.delete(lower);
-          }
-          map.set(lower, { key: rawKey, value: rawValue });
-        });
-        saveFixedHeaderEntries(Array.from(map.values()));
-        modal.style.display = 'none';
-      });
-
-      body.appendChild(list);
-      body.appendChild(tools);
-      actions.appendChild(cancelBtn);
-      actions.appendChild(okBtn);
+      actions.appendChild(clearBtn);
+      actions.appendChild(closeBtn);
       body.appendChild(actions);
 
       modal.style.display = 'block';
-
-      const firstInput = cookieList.querySelector('input');
-      if (firstInput) firstInput.focus();
     };
 
     const mountPathParamButton = () => {
@@ -965,7 +835,7 @@ const CrossRequest = {
       btn.id = HEADER_BTN_ID;
       btn.type = 'button';
       btn.className = 'ant-btn';
-      btn.textContent = 'Cookie & Header';
+      btn.textContent = '请求历史';
       btn.addEventListener('click', () => openHeaderModal());
 
       const pathBtn = document.getElementById(PATH_BTN_ID);

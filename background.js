@@ -188,19 +188,27 @@ function getStatusText(status) {
 
 // 处理跨域请求
 async function handleCrossOriginRequest(request) {
-  const { url, method = 'GET', headers = {}, body, timeout = 30000, cookies } = request;
+  const { url, method = 'GET', headers = {}, body, timeout = 30000 } = request;
 
-  // 将用户配置的 cookie 写入目标域名，配合 credentials: 'include' 自动携带
-  if (cookies && Array.isArray(cookies) && cookies.length) {
+  // 将 YApi 环境设置中的 Cookie 写入目标域名
+  const cookieHeader = headers['Cookie'] || headers['cookie'];
+  if (cookieHeader) {
     try {
-      const urlObj = new URL(url);
-      const cookieUrl = urlObj.protocol + '//' + urlObj.hostname + '/';
-      await Promise.all(cookies.map(({ name, value }) =>
-        new Promise((resolve) => {
-          chrome.cookies.set({ url: cookieUrl, name, value, path: '/' }, () => resolve());
-        })
-      ));
-      console.log('[Background] Cookie 已写入:', cookies.map(c => c.name));
+      const parsed = String(cookieHeader).split(';').map(c => {
+        const eq = c.indexOf('=');
+        if (eq === -1) return null;
+        return { name: c.slice(0, eq).trim(), value: c.slice(eq + 1).trim() };
+      }).filter(Boolean);
+      if (parsed.length) {
+        const urlObj = new URL(url);
+        const cookieUrl = urlObj.protocol + '//' + urlObj.hostname + '/';
+        await Promise.all(parsed.map(({ name, value }) =>
+          new Promise((resolve) => {
+            chrome.cookies.set({ url: cookieUrl, name, value, path: '/' }, () => resolve());
+          })
+        ));
+        console.log('[Background] Cookie 已写入:', parsed.map(c => c.name));
+      }
     } catch (e) {
       console.warn('[Background] Cookie 写入失败:', e.message);
     }
@@ -267,8 +275,7 @@ async function handleCrossOriginRequest(request) {
   const fetchOptions = {
     method,
     headers: new Headers(sanitizedHeaders),
-    mode: 'cors',
-    credentials: 'include'
+    mode: 'cors'
   };
 
   // multipart/form-data 让浏览器自动设置 boundary，移除手动 Content-Type

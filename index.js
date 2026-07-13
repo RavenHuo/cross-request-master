@@ -49,6 +49,55 @@
 
   debugLog('[Index] index.js 脚本开始执行（' + (isSilentMode ? '静默' : '完整') + '模式）');
 
+  // 请求历史存储 key（按项目+接口隔离）
+  const getHistoryKey = () => {
+    try {
+      const path = win.location.pathname;
+      const match = path.match(/\/project\/(\d+)\/interface\/api\/(\d+)/);
+      if (match) return '__crm_req_history_' + match[1] + '_' + match[2];
+      const projectMatch = path.match(/\/project\/(\d+)/);
+      if (projectMatch) return '__crm_req_history_' + projectMatch[1];
+    } catch (e) { /* ignore */ }
+    return null;
+  };
+
+  const saveRequestHistory = (requestData, response) => {
+    const key = getHistoryKey();
+    if (!key) return;
+    try {
+      const raw = win.localStorage.getItem(key);
+      const list = raw ? JSON.parse(raw) : [];
+      const entry = {
+        timestamp: Date.now(),
+        url: requestData.url,
+        method: requestData.method,
+        headers: requestData.headers || {},
+        body: requestData.data || requestData.body || null,
+        response: {
+          status: response.status || 0,
+          statusText: response.statusText || '',
+          body: typeof response.body === 'string' ? response.body.slice(0, 4096)
+            : JSON.stringify(response.body || response.data || '').slice(0, 4096)
+        }
+      };
+      list.unshift(entry);
+      if (list.length > 20) list.length = 20;
+      win.localStorage.setItem(key, JSON.stringify(list));
+    } catch (e) { /* ignore */ }
+  };
+
+  const readRequestHistory = () => {
+    const key = getHistoryKey();
+    if (!key) return [];
+    try {
+      const raw = win.localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  };
+
+  // 暴露给 content-script 读取
+  win.__crossRequestHistory = { getHistoryKey: getHistoryKey, read: readRequestHistory };
+
   // 使用提取的 helpers（由 content-script.js 预先加载）
   // 提供内联 fallback 确保扩展不会因为 helper 加载失败而崩溃
   const helpers = win.CrossRequestHelpers || {};
@@ -207,18 +256,6 @@
     }
   };
 
-  const readCookieEntries = () => {
-    const key = buildFixedHeaderStorageKey()
-      ? buildFixedHeaderStorageKey().replace('__crm_fixed_headers_', '__crm_fixed_cookies_')
-      : '__crm_fixed_cookies_unknown';
-    try {
-      const raw = win.localStorage ? win.localStorage.getItem(key) : '';
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      return [];
-    }
-  };
-
   const mergeFixedHeaders = (headers, entries) => {
     if (helpers.mergeFixedHeaders) {
       return helpers.mergeFixedHeaders(headers, entries, { preferExisting: true });
@@ -352,7 +389,7 @@
 
       const promise = new Promise((resolve, reject) => {
         // 保存回调
-        this.pendingRequests.set(id, { resolve, reject, cleanup: null });
+        this.pendingRequests.set(id, { resolve, reject, cleanup: null, requestData: options });
       });
 
       // 规范化 method 为大写，确保大小写不敏感的比较
@@ -410,8 +447,7 @@
         method,
         headers: applyFixedHeaders(options.headers || {}),
         body,
-        timeout: options.timeout || 30000,
-        cookies: readCookieEntries()
+        timeout: options.timeout || 30000
       };
 
       const pending = this.pendingRequests.get(id);
@@ -522,6 +558,7 @@
         if (typeof pending.cleanup === 'function') {
           pending.cleanup();
         }
+        saveRequestHistory(pending.requestData, response);
         // 使用 response-handler helper 处理响应（如果可用）
         if (helpers.processBackgroundResponse) {
           // 使用提取的生产函数
@@ -676,8 +713,7 @@
         method: options.method || options.type || 'GET',
         headers: options.headers || {},
         data: options.data || options.body,
-        timeout: options.timeout || 30000,
-        cookies: readCookieEntries()
+        timeout: options.timeout || 30000
       };
 
       requestData.headers = applyFixedHeaders(requestData.headers);
@@ -1255,7 +1291,6 @@
                 <span style="font-weight: bold; color: #68d391;">cURL 命令</span>
                 <div>
                     <button id="curl-copy-btn" style="background: #48bb78; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 4px; font-size: 11px;">复制</button>
-                    <button id="curl-feedback-btn" style="background: #3182ce; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 4px; font-size: 11px;">反馈</button>
                     <button id="curl-close-btn" style="background: #f56565; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">×</button>
                 </div>
             </div>
@@ -1279,9 +1314,8 @@
   function bindCurlDisplayEvents() {
     const copyBtn = document.getElementById('curl-copy-btn');
     const closeBtn = document.getElementById('curl-close-btn');
-    const feedbackBtn = document.getElementById('curl-feedback-btn');
 
-    if (!copyBtn || !closeBtn || !feedbackBtn) {
+    if (!copyBtn || !closeBtn) {
       console.warn('[Index] cURL 显示框按钮元素未找到');
       return;
     }
@@ -1289,7 +1323,6 @@
     // 清除旧的事件监听器（如果存在）
     copyBtn.onclick = null;
     closeBtn.onclick = null;
-    feedbackBtn.onclick = null;
 
     // 重新绑定事件
     copyBtn.addEventListener('click', async () => {
@@ -1314,19 +1347,6 @@
     closeBtn.addEventListener('click', () => {
       debugLog('[Index] 关闭按钮被点击');
       hideCurlDisplay();
-    });
-
-    feedbackBtn.addEventListener('click', () => {
-      const url = 'https://github.com/leeguooooo/cross-request-master/issues';
-      try {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } catch (e) {
-        try {
-          location.href = url;
-        } catch (e2) {
-          // ignore
-        }
-      }
     });
 
     debugLog('[Index] cURL 显示框事件已重新绑定');
