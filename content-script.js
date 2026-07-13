@@ -116,7 +116,6 @@ const CrossRequest = {
     const STYLE_ID = 'crm-yapi-ai-style';
     const MODAL_ID = 'crm-yapi-ai-modal';
     const BTN_GROUP_ID = 'crm-yapi-ai-btn-group';
-    const PATH_BTN_ID = 'crm-yapi-path-param-btn';
     const PATH_MODAL_ID = 'crm-yapi-path-param-modal';
     const HEADER_BTN_ID = 'crm-yapi-fixed-header-btn';
     const HEADER_MODAL_ID = 'crm-yapi-fixed-header-modal';
@@ -165,8 +164,6 @@ const CrossRequest = {
         #${MODAL_ID} .crm-copy { position: absolute; top: 8px; right: 8px; height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; font-size: 12px; }
         #${MODAL_ID} .crm-copy:hover { background: rgba(255,255,255,.14); }
 
-        /* YApi Run：路径参数填充（仅做布局约束，避免按钮被压缩换行） */
-        #${PATH_BTN_ID} { flex: 0 0 auto; flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; height: 32px; line-height: 30px; }
         #${HEADER_BTN_ID} { flex: 0 0 auto; flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; height: 32px; line-height: 30px; }
 
         #${PATH_MODAL_ID} { position: fixed; inset: 0; z-index: 2147483647; display: none; }
@@ -767,53 +764,6 @@ const CrossRequest = {
       body.appendChild(actions);
 
       modal.style.display = 'block';
-    };
-
-    const mountPathParamButton = () => {
-      const root = document.querySelector('.interface-test.postman');
-      if (!root) {
-        const oldBtn = document.getElementById(PATH_BTN_ID);
-        if (oldBtn) oldBtn.remove();
-        return;
-      }
-
-      const urlBar = root.querySelector('.url');
-      if (!urlBar) return;
-
-      const urlInput = urlBar.querySelector('input.ant-input');
-      if (!urlInput) return;
-
-      const placeholders = parseUrlPlaceholders(urlInput.value || '');
-      const existingBtn = document.getElementById(PATH_BTN_ID);
-      if (!placeholders.length) {
-        if (existingBtn) existingBtn.remove();
-        return;
-      }
-
-      if (!existingBtn) {
-        ensureStyle();
-        const btn = document.createElement('button');
-        btn.id = PATH_BTN_ID;
-        btn.type = 'button';
-        btn.className = 'ant-btn';
-        btn.textContent = '填路径参数';
-        btn.addEventListener('click', () => {
-          const r = document.querySelector('.interface-test.postman');
-          const u = r ? r.querySelector('.url input.ant-input') : null;
-          if (r && u) openPathParamModal(r, u);
-        });
-
-        // 插在 URL 输入组与发送按钮之间，尽量不破坏原布局
-        const sendEl = Array.from(urlBar.querySelectorAll('button, span')).find(
-          (el) => (el.textContent || '').replace(/\s+/g, '') === '发送'
-        );
-        const sendBtn = sendEl && sendEl.closest ? sendEl.closest('button') || sendEl : sendEl;
-        if (sendBtn && sendBtn.insertAdjacentElement) {
-          sendBtn.insertAdjacentElement('beforebegin', btn);
-        } else {
-          urlBar.appendChild(btn);
-        }
-      }
     };
 
     const mountHeaderButton = () => {
@@ -1902,7 +1852,6 @@ yapi login --base-url=${baseUrl} --browser`;
         removeExitImmersiveBtn();
       }
       mountButtons();
-      mountPathParamButton();
       mountHeaderButton();
       ensureSendClickIntercept();
       tagSectionsIfPresent();
