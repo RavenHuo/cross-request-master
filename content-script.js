@@ -835,21 +835,18 @@ const CrossRequest = {
       btn.id = HEADER_BTN_ID;
       btn.type = 'button';
       btn.className = 'ant-btn';
-      btn.textContent = '请求历史';
+      btn.innerHTML = '&#x1F4CB; 请求历史';
       btn.addEventListener('click', () => openHeaderModal());
 
-      const pathBtn = document.getElementById(PATH_BTN_ID);
-      if (pathBtn && pathBtn.insertAdjacentElement) {
-        pathBtn.insertAdjacentElement('afterend', btn);
-        return;
-      }
-
-      const sendEl = Array.from(urlBar.querySelectorAll('button, span')).find(
-        (el) => (el.textContent || '').replace(/\s+/g, '') === '发送'
-      );
-      const sendBtn = sendEl && sendEl.closest ? sendEl.closest('button') || sendEl : sendEl;
-      if (sendBtn && sendBtn.insertAdjacentElement) {
-        sendBtn.insertAdjacentElement('beforebegin', btn);
+      // 放到最右边：先找保存按钮，再找发送按钮，插入到最右侧按钮后面
+      const buttons = urlBar.querySelectorAll('button');
+      let lastBtn = null;
+      buttons.forEach((b) => {
+        const t = (b.textContent || '').replace(/\s+/g, '');
+        if (t === '保存' || t === '发送') lastBtn = b;
+      });
+      if (lastBtn && lastBtn.insertAdjacentElement) {
+        lastBtn.insertAdjacentElement('afterend', btn);
       } else {
         urlBar.appendChild(btn);
       }
