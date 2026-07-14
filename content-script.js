@@ -142,8 +142,6 @@ const CrossRequest = {
         #${MODAL_ID} .crm-title { font-size: 14px; font-weight: 600; color: #111; }
         #${MODAL_ID} .crm-header-actions { display: flex; align-items: center; gap: 8px; }
         #${MODAL_ID} .crm-close { border: none; background: transparent; cursor: pointer; font-size: 18px; line-height: 18px; padding: 4px 6px; color: #666; }
-        #${MODAL_ID} .crm-feedback { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid #d0d7de; background: #fff; color: #24292f; font-size: 12px; text-decoration: none; }
-        #${MODAL_ID} .crm-feedback:hover { background: #f6f8fa; }
         #${MODAL_ID} .crm-tabs { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #eee; background: #f8fafc; flex-wrap: wrap; }
         #${MODAL_ID} .crm-tab { border: 1px solid #d0d7de; background: #fff; color: #24292f; padding: 4px 10px; border-radius: 999px; font-size: 12px; cursor: pointer; }
         #${MODAL_ID} .crm-tab.active { background: #111827; border-color: #111827; color: #fff; }
@@ -1041,7 +1039,7 @@ const CrossRequest = {
     };
 
     const buildGlobalMcpConfigBlocks = ({ origin, email }) => {
-      const mcpPkg = '@leeguoo/yapi-mcp';
+      const mcpPkg = 'https://code.37ops.com/go-devops/yapi-mcp';
       const baseUrl = String(origin || '').replace(/\/$/, '');
       const host = String(location.hostname || 'yapi').replace(/[^a-zA-Z0-9._-]/g, '');
       const serverName = `yapi-global-${host.replace(/\./g, '-')}-mcp`;
@@ -1050,9 +1048,7 @@ const CrossRequest = {
 
       const stdioArgs = [
         '-y',
-        '-p',
         mcpPkg,
-        'yapi-mcp',
         '--stdio',
         `--yapi-base-url=${baseUrl}`,
         '--yapi-auth-mode=global',
@@ -1115,16 +1111,10 @@ const CrossRequest = {
       const baseUrl = String(origin || '').replace(/\/$/, '');
       const safeEmail = looksLikeEmail(email) ? String(email).trim() : 'YOUR_EMAIL';
       return `# 先全局安装 yapi CLI（如已安装可跳过）
-npm install -g @leeguoo/yapi-mcp
+npm install -g https://clawhub.37ops.com/huoruiwen/yapi
 
 # 推荐：用 skills 安装 Skill 到 Codex/Claude/Cursor
-npx skills add leeguooooo/cross-request-master -y -g
-
-# 初始化 ~/.yapi/config.toml
-yapi config init --base-url=${baseUrl} --auth-mode=global --email=${safeEmail}
-
-# 首次使用推荐同步一次浏览器登录态
-yapi login --base-url=${baseUrl} --browser`;
+npx skills add https://clawhub.37ops.com/huoruiwen/yapi -y -g`;
     };
 
     const getCookieValue = (key) => {
@@ -1523,19 +1513,12 @@ yapi login --base-url=${baseUrl} --browser`;
 	          <div class="crm-header">
 	            <div class="crm-title">YApi 工具箱</div>
               <div class="crm-header-actions">
-                <a
-                  class="crm-feedback"
-                  href="https://github.com/leeguooooo/cross-request-master/issues/new"
-                  target="_blank"
-                  rel="noreferrer"
-                >问题反馈</a>
 	              <button class="crm-close" aria-label="Close">×</button>
               </div>
 	          </div>
             <div class="crm-tabs" role="tablist">
               <button class="crm-tab" type="button" data-tab="skill">Skill 一键安装</button>
-              <button class="crm-tab" type="button" data-tab="mcp">MCP（兼容）</button>
-              <button class="crm-tab" type="button" data-tab="cli">CLI 使用</button>
+              <button class="crm-tab" type="button" data-tab="mcp">MCP</button>
             </div>
 	          <div class="crm-body">
 	            <div id="crm-tool-content" style="margin-top: 4px;"></div>
@@ -1593,40 +1576,7 @@ yapi login --base-url=${baseUrl} --browser`;
       return { container, hintEl };
     };
 
-    const renderCliPanel = (container) => {
-      const { container: header, hintEl } = renderSectionHeader(
-        'CLI 安装与文档同步',
-        '一键复制命令安装本地 CLI，并按绑定同步文档到 YApi。'
-      );
-      const link = document.createElement('a');
-      link.href = 'https://github.com/leeguooooo/cross-request-master';
-      link.target = '_blank';
-      link.rel = 'noreferrer';
-      link.textContent = 'cross-request-master';
-      if (hintEl) {
-        hintEl.appendChild(document.createTextNode(' 项目地址：'));
-        hintEl.appendChild(link);
-      }
-      container.appendChild(header);
-
-      container.appendChild(
-        renderCodeBlock('一键安装 CLI（本地）', 'npm i -g @leeguoo/yapi-mcp\n')
-      );
-      container.appendChild(
-        renderCodeBlock('基础使用', 'yapi login\nyapi --path /api/interface/get --query id=123\n')
-      );
-      container.appendChild(
-        renderCodeBlock(
-          '文档同步（绑定后执行）',
-          [
-            'yapi docs-sync bind add --name projectA --dir docs/release-notes --project-id 267 --catid 3667',
-            'yapi docs-sync --binding projectA',
-            '# 或同步 .yapi/docs-sync.json 内全部绑定',
-            'yapi docs-sync'
-          ].join('\n') + '\n'
-        )
-      );
-    };
+;
 
     const renderMcpPanel = async (container, origin) => {
       const { container: header } = renderSectionHeader(
@@ -1656,12 +1606,6 @@ yapi login --base-url=${baseUrl} --browser`;
     };
 
     const renderSkillPanel = async (container, origin) => {
-      const { container: header } = renderSectionHeader(
-        'Skill 一键安装（Codex/Claude/Cursor）',
-        '推荐用 npx skills add 安装 Skill，再用 yapi config init 初始化 ~/.yapi/config.toml。'
-      );
-      container.appendChild(header);
-
       const email = await resolveCurrentUserEmail(origin);
       const command = buildSkillInstallCommand({ origin, email });
       container.appendChild(renderCodeBlock('Skill 一键安装', command + '\n'));
@@ -1684,12 +1628,6 @@ yapi login --base-url=${baseUrl} --browser`;
       content.textContent = '生成中...';
 
       try {
-        if (activeTab === 'cli') {
-          content.textContent = '';
-          renderCliPanel(content);
-          return;
-        }
-
         const nextContent = document.createElement('div');
         if (activeTab === 'skill') {
           await renderSkillPanel(nextContent, origin);
