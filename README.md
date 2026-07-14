@@ -1,186 +1,97 @@
 # Cross Request Master
 
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/leeguooooo?logo=github)](https://github.com/sponsors/leeguooooo)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-brightgreen.svg)](https://chrome.google.com/webstore/detail/efgjanhcajpiljllnehiinpmicghbgfm)
+Cross Request Master 是一个面向 YApi 和接口调试场景的 Chrome 扩展。它把页面里的请求转交给扩展后台发送，用来绕过普通网页环境下的 CORS 限制，并在 YApi 页面增强请求调试、cURL 复制、路径参数填写、请求历史和接口信息复制能力。
 
-面向 API 开发/测试的 Chrome 扩展：绕过 CORS 发请求、自动生成 cURL，并对 YApi「运行」页做增强（内嵌 cURL、路径参数 `{param}` 引导填写）。
+## 功能概览
 
-本仓库包含生态内的多个子项目：
-- `packages/yapi-mcp` — CLI / Skill（发布包名保持为 `@leeguoo/yapi-mcp`，MCP 配置作为兼容方案保留，不影响扩展打包）
-- `plugins/yapi-plugin` — Cursor 与 Claude Code 插件（已从原独立仓库 `leeguooooo/yapi-plugin` 归档并整合回本仓库）
+- 跨域请求：YApi 运行页请求由扩展后台代发，减少普通网页环境下的 CORS 阻断。
+- YApi 运行页增强：发送请求时自动生成 cURL，并尽量以内嵌面板显示在 URL 行下方。
+- 路径参数引导：接口路径包含 `{param}` 时，点击发送会提示填写缺失参数。
+- 请求历史：在 YApi 运行页显示最近请求记录，并支持从历史记录复制 cURL。
+- 固定 Header：支持按当前 YApi 域名保存公共 Header，后续请求自动合并。
+- 复制给 AI：在 YApi 接口详情页把当前接口信息整理为 Markdown 后复制到剪贴板。
+- YApi 工具箱：在接口详情页生成 Skill/MCP 相关安装或配置命令。
 
-当前推荐安装链路是 `npx skills add leeguooooo/cross-request-master -y -g` 安装 Skill，再用 `yapi config init` 初始化 `~/.yapi/config.toml`。`yapi-mcp` 已支持浏览器登录同步 Cookie（`yapi login --browser`），可用于仅支持 SSO/无法账号密码登录的 YApi 场景。
+## 安装方法
 
+进入项目根目录后执行：
 
-<p align="center">
-  <img
-    src="screenshots/store/store-2-yapi-run-curl-1280x800.jpg"
-    alt="YApi 运行页：内嵌 cURL + 路径参数填写"
-    width="960"
-  />
-</p>
-<p align="center">
-  <img
-    src="screenshots/store/store-3-popup-1280x800.jpg"
-    alt="扩展弹出窗口：状态与问题反馈入口"
-    width="520"
-  />
-</p>
-
-
-## 功能特性
-
-- 跨域请求（CORS bypass）：在页面侧调用 `crossRequest`，由扩展后台代发
-- 内嵌 cURL：YApi「运行」页 URL 下方展示可复制的 cURL 命令
-- 路径参数引导：URL 含 `{param}` 时提示填写，避免请求失败
-- 固定 Header：为跨域请求自动追加自定义 Header
-- YApi 工具箱：Skill 一键安装（推荐，支持 `npx skills add`）/ Cursor 与 Claude Code 插件（`plugins/yapi-plugin/`）/ MCP 配置（兼容）/ CLI 使用与 docs-sync
-- 复制给 AI：把当前接口信息整理为 Markdown 一键复制
-- 现代请求支持：优先 `fetch` / Promise 工作流，兼容历史 `$.ajax`
-- Manifest V3：兼容最新 Chrome 扩展标准
-
-## 安装
-
-**Chrome Web Store（推荐）**  
-https://chrome.google.com/webstore/detail/efgjanhcajpiljllnehiinpmicghbgfm
-
-**开发者模式**  
 ```bash
-git clone https://github.com/leeguooooo/cross-request-master.git
-cd cross-request-master
+pnpm install
 ./build-extension.sh
 ```
-然后在 `chrome://extensions/` 开启开发者模式 → “加载已解压的扩展程序” → 选择 `build/`。
 
-## 使用
+然后打开 `chrome://extensions/`：
 
-### 在 YApi 中
+1. 开启右上角「开发者模式」。
+2. 点击「加载已解压的扩展程序」。
+3. 选择项目生成的 `build/` 目录。
 
-安装后直接在 YApi「运行」页发送请求即可，扩展会自动处理跨域、显示 cURL，并把 JSON 响应解析为对象供脚本使用。
+如果只是调试源码，也可以直接加载项目根目录；发布或分发时建议使用 `./build-extension.sh` 生成的 `build/` 和 `.artifacts/releases/*.zip`。
 
-在接口详情页（基本信息区域右上角）额外提供：
-- **YApi 工具箱**：包含 Skill 一键安装（推荐，支持 Codex/Claude/Cursor 与 `npx skills add`）、MCP 配置（兼容）、CLI 使用与 docs-sync 说明（自动拼好命令）
-- **复制给 AI**：把当前接口信息整理成 Markdown（仅接口相关字段）复制到剪贴板
+## 在 YApi 中使用
 
-如果你要在本机直接装好 Skill + CLI，当前最短路径是：
+安装并启用扩展后，打开 YApi 接口详情页，例如：
 
-```bash
-npm install -g @leeguoo/yapi-mcp
-npx skills add leeguooooo/cross-request-master -y -g
-yapi config init --base-url=https://your-yapi-domain.com --auth-mode=global --email=your_email@example.com
-yapi login --base-url=https://your-yapi-domain.com --browser
-```
+`http://yapi.39on.com/project/393/interface/api/3038`
 
-更完整说明见 [`packages/yapi-mcp/README.md`](./packages/yapi-mcp/README.md)。
+在「预览」页的「基本信息」标题右侧会出现两个按钮：
 
-### ClawHub Skill 同步
+- `YApi 工具`：打开工具箱，自动生成 Skill 一键安装命令和 MCP 配置片段。
+- `复制给 AI`：读取当前接口详情，把接口名称、路径、方法、请求参数、返回结构等整理为 Markdown 并复制。
 
-- ClawHub 地址：[leeguooooo/yapi](https://clawhub.ai/leeguooooo/yapi)
-- 通过项目脚本同步（已接入 `clawhub sync --all`）：
+切换到「运行」页后可以直接点击 YApi 原有的「发送」按钮。扩展会在请求发送前接管调用，并完成这些增强：
 
-```bash
-pnpm run clawhub:sync:dry
-pnpm run clawhub:sync
-```
+- 如果 URL 中还有 `{id}`、`{name}` 这类占位符，会弹出「填写路径参数」窗口，填完后继续发送。
+- 发送时会在页面中展示当前请求对应的 cURL 命令，可直接点击「复制」。
+- 请求会写入当前项目/接口维度的本地历史，点击「请求历史」可以查看最近记录、展开响应内容、复制历史 cURL。
+- 如果当前域名已保存固定 Header，请求发出前会自动合并这些 Header。
 
-### YApi OpenAPI（Yapi-MCP tool 同名方法）
+YApi 页面通常还会使用当前登录态访问接口文档。扩展会读取页面能访问到的接口信息，但不会把接口内容上传到第三方服务。
 
-扩展在页面侧额外暴露 `window.crossRequest.yapiMcp`（也可用 `window.crossRequest.yapi`），把 YApi OpenAPI 封装成与 Yapi-MCP 一致的 5 个方法，方便直接在浏览器控制台/脚本里操作接口文档：
+### 设置 Cookie 流程
 
-```js
-// 先配置（支持多项目：'28:token1,29:token2'）
-window.crossRequest.yapiMcp.configure({
-  baseUrl: 'https://your-yapi-domain.com',
-  token: '28:your_project_token'
-});
+如果目标接口依赖登录态，可以先在 YApi 的项目环境中配置 Cookie：
 
-// 查接口、拉分类、搜索、保存
-const api = await window.crossRequest.yapiMcp.yapi_get_api_desc({ projectId: '28', apiId: '66' });
-```
+1. 进入项目的「设置」或「环境配置」页面。
+2. 在环境列表中选择要使用的环境，例如 `local`。
+3. 填写环境域名，例如协议选择 `http://`，域名填写 `yunying.39on.com`。
+4. 在 `Cookie` 区域添加 cookie name 和 cookie value，例如登录态 cookie。
+5. 点击「保存」。
+6. 回到接口「运行」页，选择刚才配置的环境，再点击「发送」。
 
-### 在任意网页中手动调用
+![YApi 环境 Cookie 设置](images/yapi-env-cookie-setting.png)
 
-```js
-window.crossRequest({
-  url: 'https://api.example.com/data',
-  method: 'GET',
-  headers: { Authorization: 'Bearer token' },
-  success(res) {
-    console.log('Success:', res);
-  },
-  error(err) {
-    console.error('Error:', err);
-  }
-});
-```
+请求发出时，YApi 会把环境里的 Cookie 组装进请求 Header。扩展后台收到请求后，会先解析 `Cookie` Header，并通过 `chrome.cookies.set` 写入目标域名，再使用 `fetch` 发起真实请求。这样目标服务能按正常浏览器 Cookie 方式识别登录态。
 
-`crossRequest` 也会返回 Promise：
+### 发起请求流程
 
-```js
-const resp = await window.crossRequest({ url: '/api/ping' });
-console.log(resp.status, resp.data);
-```
+在接口「运行」页选择环境、填写 query/header/body 后，点击 YApi 的「发送」按钮即可。扩展处理流程如下：
 
-### 兼容模式：jQuery（Legacy）
+1. 页面桥接逻辑接管 YApi 运行页请求，补全环境域名、路径参数、query 和 Header。
+2. 如果 URL 中有未填写的 `{param}`，先弹出路径参数填写窗口。
+3. 生成当前请求的 cURL，并展示在 URL 输入区域下方。
+4. 内容脚本把请求数据转发给扩展后台。
+5. 后台过滤浏览器不允许设置的 Header；如果存在 Cookie，则先写入目标域名。
+6. 后台使用 `fetch` 发起真实请求，并把状态码、响应头和响应体返回页面。
+7. 页面解析 JSON 响应，展示结果，同时把本次请求保存到「请求历史」。
 
-大多数场景建议直接使用 `fetch + window.crossRequest`。以下仅用于历史页面仍依赖 `$.ajax` 时：
-- **YApi/目标站点**：默认拦截所有 `$.ajax`。如需关闭：`crossRequest: false`
-- **其他站点**：默认不拦截。需显式开启：`crossRequest: true`
+![YApi 运行页发起请求](images/yapi-run-request-flow.png)
 
-```js
-$.ajax({
-  url: 'https://api.example.com/data',
-  method: 'GET',
-  crossRequest: true
-});
-```
+### 页面效果
 
-### 文件上传（FormData）
+接口详情页会在「基本信息」右侧注入 `YApi 工具` 和 `复制给 AI`。
 
-```js
-const fd = new FormData();
-fd.append('file', fileInput.files[0]);
-fd.append('name', 'demo');
+![YApi 接口详情页增强](images/yapi-interface-preview.png)
 
-await window.crossRequest({
-  url: 'https://api.example.com/upload',
-  method: 'POST',
-  body: fd
-});
-```
+ cURL 展示效果：
 
-## TypeScript 类型定义
+![cURL 生成示例](images/yapi-curl-command.png)
 
-仓库内置 `types/cross-request.d.ts`，可直接复制到你的项目并在 `tsconfig.json` 中 include，或在 `global.d.ts` 引用：
-
-```ts
-/// <reference path="./types/cross-request.d.ts" />
-```
-
-## 已知限制 / FAQ
-
-- **自定义 Header 被放到 `Access-Control-Request-Headers`**：这是浏览器 CORS 预检行为，需要服务端正确返回 `Access-Control-Allow-Headers`。
-- **Network 面板看不到请求**：请求由扩展后台发出，不会出现在页面 Network；可在扩展 Service Worker 的 Network/Console 查看。
-
-## 开发与测试（本仓库）
-
-项目结构：
-```
-manifest.json        MV3 配置
-background.js        Service Worker
-content-script.js    注入/通信
-index.js             页面侧 API 与适配器
-popup.html/popup.js  扩展弹出窗口
-src/helpers/         可复用 helper
-tests/               Jest 单测
-skills/yapi/         YApi Skill（canonical；自动同步到 packages/yapi-mcp/skill-template 与 plugins/yapi-plugin/skills）
-packages/yapi-mcp/   CLI（@leeguoo/yapi-mcp）与 MCP skill-template
-plugins/yapi-plugin/ Cursor 与 Claude Code 插件
-docs/                文档（见 docs/README.md）
-```
+## 开发与测试
 
 常用命令：
+
 ```bash
 pnpm install
 pnpm test
@@ -189,47 +100,76 @@ pnpm format
 ./build-extension.sh
 ```
 
-## 贡献与支持
+说明：
 
-- 提交 Issue/PR 前请先看 `CONTRIBUTING.md`
-- 如果项目对你有帮助，欢迎 Star 或赞助：
-  - GitHub Sponsors: https://github.com/sponsors/leeguooooo
-  - 微信/支付宝赞赏码见下方
+- `pnpm test` 使用 Jest 运行 `tests/**/*.test.js`。
+- `pnpm lint` 使用 ESLint 检查根目录脚本。
+- `pnpm format` 使用 Prettier 格式化根目录的 JS/JSON/MD 文件。
+- `./build-extension.sh` 会重新生成 `build/`，并把压缩包输出到 `.artifacts/releases/`。
 
-### 赞助开发
+## 项目结构
 
-如果你觉得这个项目对你有帮助，可以请作者喝杯咖啡：
+```text
+.
+├── manifest.json              # Chrome Manifest V3 配置、权限、content script、后台脚本入口
+├── background.js              # 扩展 Service Worker：代发跨域请求、处理 Cookie/FormData、返回响应
+├── content-script.js          # 内容脚本：识别 YApi、注入桥接逻辑、渲染 YApi 工具按钮和弹窗
+├── index.js                   # 页面桥接逻辑：接管 YApi 请求、显示 cURL、整理响应
+├── popup.html                 # 扩展弹窗页面
+├── popup.js                   # 弹窗逻辑：显示状态、打开问题反馈入口
+├── jquery-3.1.1.js            # 兼容历史页面使用的 jQuery 文件
+├── src/helpers/               # 可复用 helper
+│   ├── body-parser.js         # 请求/响应体转换
+│   ├── fixed-headers.js       # 固定 Header 的存储、归一化、合并
+│   ├── form-data.js           # FormData/File/Blob 序列化辅助
+│   ├── logger.js              # 安全日志和大响应截断
+│   ├── path-params.js         # URL 路径参数提取与替换
+│   ├── query-string.js        # 查询字符串处理
+│   ├── request-headers.js     # 请求头过滤，移除 fetch 不允许设置的 Header
+│   ├── response-handler.js    # 响应对象整理
+│   ├── yapi-doc-immersive.js  # YApi 文档型接口的沉浸式展示判定
+│   └── yapi-openapi.js        # YApi OpenAPI 客户端封装
+├── tests/                     # Jest 单元测试
+├── types/cross-request.d.ts   # TypeScript 全局类型定义
+├── icons/                     # 扩展图标
+├── images/                    # README、商店或展示图片
+├── build-extension.sh         # 本地打包脚本
+├── build/                     # 构建输出目录
+└── .artifacts/releases/       # 打包生成的 zip 文件
+```
 
-**GitHub Sponsors**
+核心调用链：
 
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/leeguooooo?style=for-the-badge&logo=github)](https://github.com/sponsors/leeguooooo)
+```text
+YApi 运行页
+  -> index.js 接管请求并派发事件
+  -> content-script.js 转发到 Chrome runtime
+  -> background.js 过滤 Header，并按需写入 Cookie
+  -> background.js 使用 fetch 代发请求
+  -> content-script.js 把结果回传页面
+  -> index.js 解析响应、触发回调、保存历史、展示 cURL
+```
 
-**微信 / 支付宝**
+## 权限说明
 
-<div align="center">
-  <img src=".github/wechatpay.JPG" alt="微信赞赏码" width="300"/>
-  <img src=".github/alipay.JPG" alt="支付宝收款码" width="300"/>
-</div>
+扩展使用的主要权限来自 `manifest.json`：
 
-## 更新日志
+- `storage`：保存扩展配置。
+- `tabs`：向页面回传调试信息。
+- `cookies`：在需要时把 YApi 环境里的 Cookie 写入目标域，帮助接口请求带上登录态。
+- `<all_urls>`：允许扩展后台向任意接口地址发起请求，这是跨域调试能力的基础。
 
-见 `CHANGELOG.md`。
+更完整的权限和隐私说明见：
 
-## 许可证
+- `PERMISSION_JUSTIFICATION.md`
+- `PRIVACY_POLICY.md`
 
-[MIT License](https://opensource.org/licenses/MIT)
+## 常见问题
 
-## 相关链接
+### 为什么页面 Network 面板看不到请求？
 
-- Issues: https://github.com/leeguooooo/cross-request-master/issues
-- YApi: https://github.com/YMFE/yapi
-- Yapi-MCP: https://github.com/leeguooooo/Yapi-MCP
-- YApi OpenAPI 文档: https://hellosean1025.github.io/yapi/openapi.html
-- Chrome Extension Docs: https://developer.chrome.com/docs/extensions/
+请求由扩展后台的 Service Worker 发出，不一定会出现在当前网页的 Network 面板里。可以打开 `chrome://extensions/`，在本扩展详情中查看 Service Worker 的控制台和 Network。
 
-## 更多文档
+### 为什么有些 Header 没有生效？
 
-- 文档总览：`docs/README.md`
-- 测试指南：`docs/TESTING.md`
-- 技术路线图：`docs/ROADMAP.md`
-- YApi 插件（Cursor / Claude Code）：`docs/yapi-plugin/README.md`
+浏览器的 `fetch` 不允许脚本设置 `Cookie`、`Host`、`Origin`、`Referer`、`User-Agent` 等受限 Header。扩展会过滤这些 Header，避免请求失败。
