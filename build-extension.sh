@@ -60,8 +60,6 @@ Chrome Extension for YApi Cross-Origin Requests
 4. 点击"加载已解压的扩展程序"
 5. 选择此文件夹
 
-更多信息请访问:
-https://github.com/leeguooooo/cross-request-master
 EOF
 
 # 创建 ZIP 文件
@@ -82,4 +80,3 @@ unzip -l "${ZIP_PATH}" | head -20
 echo ""
 echo "🎉 扩展打包成功!"
 echo "📤 可以上传到 Chrome Web Store 或用于本地安装"
-echo "🔗 Chrome Web Store: https://chrome.google.com/webstore/detail/efgjanhcajpiljllnehiinpmicghbgfm"
