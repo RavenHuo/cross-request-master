@@ -76,8 +76,8 @@
         response: {
           status: response.status || 0,
           statusText: response.statusText || '',
-          body: typeof response.body === 'string' ? response.body.slice(0, 4096)
-            : JSON.stringify(response.body || response.data || '').slice(0, 4096)
+          body: typeof response.body === 'string' ? response.body.slice(0, 32768)
+            : JSON.stringify(response.body || response.data || '').slice(0, 32768)
         }
       };
       list.unshift(entry);
