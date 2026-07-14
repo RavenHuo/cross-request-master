@@ -228,6 +228,9 @@ const CrossRequest = {
           box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
         #crm-exit-immersive:hover { background: #f6f8fa; }
+
+        #${HEADER_MODAL_ID} .crm-history-action-btn { height: 26px; padding: 0 10px; border-radius: 4px; border: 1px solid #d9d9d9; background: #fff; color: #595959; font-size: 11px; cursor: pointer; }
+        #${HEADER_MODAL_ID} .crm-history-action-btn:hover { border-color: #1677ff; color: #1677ff; }
       `;
       (document.head || document.documentElement).appendChild(style);
     };
@@ -686,6 +689,31 @@ const CrossRequest = {
         return d.innerHTML;
       };
 
+      const showToast = (msg) => {
+        const existing = document.getElementById('crm-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.id = 'crm-toast';
+        toast.innerHTML = '<span style="color:#52c41a;margin-right:6px;">&#10003;</span>' + msg;
+        toast.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:8px 20px;background:#fff;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);font-size:13px;color:#333;pointer-events:none;display:flex;align-items:center;gap:4px;';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
+      };
+
+      const generateCurl = (entry) => {
+        let curl = `curl -X ${entry.method}`;
+        const headers = entry.headers || {};
+        Object.keys(headers).forEach((k) => {
+          curl += ` \\\n  -H '${k}: ${String(headers[k]).replace(/'/g, "\\'")}'`;
+        });
+        if (entry.body && entry.method !== 'GET' && entry.method !== 'HEAD') {
+          const bodyStr = typeof entry.body === 'string' ? entry.body : JSON.stringify(entry.body);
+          curl += ` \\\n  -d '${bodyStr.replace(/'/g, "\\'")}'`;
+        }
+        curl += ` \\\n  '${entry.url}'`;
+        return curl;
+      };
+
       ensureStyle();
       ensureHeaderModal();
 
@@ -729,8 +757,18 @@ const CrossRequest = {
             <div style="margin-bottom:6px;"><b>Headers:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;">${escHtml(JSON.stringify(entry.headers, null, 2))}</pre></div>
             <div style="margin-bottom:6px;"><b>Body:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;">${escHtml(typeof entry.body === 'string' ? entry.body : JSON.stringify(entry.body, null, 2))}</pre></div>
             <div style="margin-bottom:6px;"><b>Response:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;max-height:160px;overflow:auto;">${escHtml(String(entry.response.body || ''))}</pre></div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button class="crm-history-action-btn" data-action="curl">复制 cURL</button>
+            </div>
           `;
           item.appendChild(detail);
+
+          // 按钮事件
+          detail.querySelector('[data-action="curl"]').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await safeWriteClipboard(generateCurl(entry));
+            showToast('已复制');
+          });
 
           header.addEventListener('click', () => {
             detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
