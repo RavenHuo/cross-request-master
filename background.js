@@ -189,6 +189,7 @@ function getStatusText(status) {
 // 处理跨域请求
 async function handleCrossOriginRequest(request) {
   const { url, method = 'GET', headers = {}, body, timeout = 30000 } = request;
+  let restoreTemporaryCookies = async () => {};
 
   // 将 YApi 环境设置中的 Cookie 写入目标域名
   const cookieHeader = headers['Cookie'] || headers['cookie'];
@@ -199,15 +200,108 @@ async function handleCrossOriginRequest(request) {
         if (eq === -1) return null;
         return { name: c.slice(0, eq).trim(), value: c.slice(eq + 1).trim() };
       }).filter(Boolean);
-      if (parsed.length) {
+      const cookieMap = new Map();
+      parsed.forEach(({ name, value }) => {
+        if (name) cookieMap.set(name, value);
+      });
+      const cookiesToApply = Array.from(cookieMap.entries()).map(([name, value]) => ({
+        name,
+        value
+      }));
+
+      const cookieToUrl = (cookie) => {
+        const hostname = String(cookie.domain || '').replace(/^\./, '');
+        const protocol = cookie.secure ? 'https:' : new URL(url).protocol;
+        const path = cookie.path && cookie.path.startsWith('/') ? cookie.path : '/';
+        return protocol + '//' + hostname + path;
+      };
+
+      const getCookies = (details) =>
+        new Promise((resolve) => {
+          chrome.cookies.getAll(details, (cookies) => resolve(cookies || []));
+        });
+
+      const setCookie = (details) =>
+        new Promise((resolve) => {
+          chrome.cookies.set(details, () => resolve(chrome.runtime.lastError || null));
+        });
+
+      const removeCookie = (details) =>
+        new Promise((resolve) => {
+          chrome.cookies.remove(details, () => resolve(chrome.runtime.lastError || null));
+        });
+
+      if (cookiesToApply.length) {
         const urlObj = new URL(url);
         const cookieUrl = urlObj.protocol + '//' + urlObj.hostname + '/';
-        await Promise.all(parsed.map(({ name, value }) =>
-          new Promise((resolve) => {
-            chrome.cookies.set({ url: cookieUrl, name, value, path: '/' }, () => resolve());
-          })
-        ));
-        console.log('[Background] Cookie 已写入:', parsed.map(c => c.name));
+
+        const restoreItems = [];
+        const appliedNames = [];
+        const conflictedNames = [];
+
+        for (const { name, value } of cookiesToApply) {
+          const existingCookies = await getCookies({ url, name });
+          if (existingCookies.length) {
+            conflictedNames.push(name);
+            restoreItems.push(...existingCookies);
+            await Promise.all(
+              existingCookies.map((cookie) =>
+                removeCookie({
+                  url: cookieToUrl(cookie),
+                  name: cookie.name,
+                  storeId: cookie.storeId
+                })
+              )
+            );
+          }
+
+          await setCookie({ url: cookieUrl, name, value, path: '/' });
+          appliedNames.push(name);
+        }
+
+        restoreTemporaryCookies = async () => {
+          try {
+            await Promise.all(
+              appliedNames.map((name) => removeCookie({ url: cookieUrl, name }))
+            );
+            await Promise.all(
+              restoreItems.map((cookie) => {
+                const details = {
+                  url: cookieToUrl(cookie),
+                  name: cookie.name,
+                  value: cookie.value,
+                  path: cookie.path,
+                  secure: cookie.secure,
+                  httpOnly: cookie.httpOnly,
+                  sameSite: cookie.sameSite,
+                  storeId: cookie.storeId
+                };
+                if (!cookie.hostOnly && cookie.domain) {
+                  details.domain = cookie.domain;
+                }
+                if (cookie.expirationDate) {
+                  details.expirationDate = cookie.expirationDate;
+                }
+                return setCookie(details);
+              })
+            );
+            if (appliedNames.length) {
+              console.log('[Background] 临时 Cookie 已清理:', appliedNames);
+            }
+            if (restoreItems.length) {
+              console.log('[Background] 旧 Cookie 已恢复:', restoreItems.map((item) => item.name));
+            }
+          } catch (restoreError) {
+            console.warn('[Background] Cookie 恢复失败:', restoreError.message);
+          }
+        };
+
+        if (appliedNames.length) {
+          console.log('[Background] Cookie 已临时写入:', appliedNames);
+        }
+        if (conflictedNames.length) {
+          console.log('[Background] 已临时替换冲突 Cookie:', conflictedNames);
+        }
       }
     } catch (e) {
       console.warn('[Background] Cookie 写入失败:', e.message);
@@ -499,6 +593,8 @@ async function handleCrossOriginRequest(request) {
 
     // 对于其他错误，提供更详细的信息
     throw new Error('请求失败：' + (error.message || '未知错误'));
+  } finally {
+    await restoreTemporaryCookies();
   }
 }
 
