@@ -14,20 +14,20 @@ Cross Request Master 是一个面向 YApi 和接口调试场景的 Chrome 扩展
 
 ## 安装方法
 
-进入项目根目录后执行：
+下载扩展安装包：
 
-```bash
-pnpm install
-./build-extension.sh
-```
+[18b4e00205ba26e4ed6d44af8b726af8.zip](https://sy-ht-storage.39on.com/sy_admin_public/18b4e00205ba26e4ed6d44af8b726af8.zip)
 
-然后打开 `chrome://extensions/`：
+然后打开 Chrome 扩展管理页：
 
 1. 开启右上角「开发者模式」。
-2. 点击「加载已解压的扩展程序」。
-3. 选择项目生成的 `build/` 目录。
+2. 访问 `chrome://extensions/`。
+3. 将下载好的 zip 安装包拖入扩展管理页。
+4. 安装成功后，扩展列表中会出现 `yapi-cross-request`，并显示已启用状态。
 
-如果只是调试源码，也可以直接加载项目根目录；发布或分发时建议使用 `./build-extension.sh` 生成的 `build/` 和 `.artifacts/releases/*.zip`。
+安装成功示例：
+
+![安装成功示例](images/extension-installed.png)
 
 ## 在 YApi 中使用
 
