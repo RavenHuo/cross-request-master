@@ -288,7 +288,10 @@ const CrossRequest = {
       if (!input) return;
       const next = String(value == null ? '' : value);
       try {
-        const proto = window.HTMLInputElement && window.HTMLInputElement.prototype;
+        const proto =
+          typeof HTMLTextAreaElement !== 'undefined' && input instanceof HTMLTextAreaElement
+            ? window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype
+            : window.HTMLInputElement && window.HTMLInputElement.prototype;
         const setter = proto && Object.getOwnPropertyDescriptor(proto, 'value')?.set;
         if (setter) {
           setter.call(input, next);
@@ -301,6 +304,21 @@ const CrossRequest = {
 
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const setEditableText = (el, value) => {
+      if (!el) return;
+      const next = String(value == null ? '' : value);
+      el.textContent = next;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const isVisibleElement = (el) => {
+      if (!el) return false;
+      const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+      if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+      return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
     };
 
     const parseUrlPlaceholders = (url) => {
@@ -371,6 +389,458 @@ const CrossRequest = {
 
       return null;
     };
+
+    const findCollapseScope = (root, patterns) => {
+      if (!root) return null;
+      const list = Array.isArray(patterns) ? patterns : [];
+      const collapseItems = Array.from(root.querySelectorAll('.ant-collapse-item'));
+      const item = collapseItems.find((el) => {
+        const header = el.querySelector('.ant-collapse-header');
+        const text = header ? (header.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        return list.some((pattern) => pattern.test(text));
+      });
+      return item ? item.querySelector('.ant-collapse-content-box') || item : null;
+    };
+
+    const normalizeFillValue = (value) => {
+      if (value == null) return '';
+      if (Array.isArray(value)) return value.map((item) => normalizeFillValue(item)).join(',');
+      if (typeof value === 'object') {
+        if (value.__isFile) return value.name || '';
+        try {
+          return JSON.stringify(value);
+        } catch (e) {
+          return String(value);
+        }
+      }
+      return String(value);
+    };
+
+    const parseUrlSearchParams = (url) => {
+      const out = {};
+      if (!url) return out;
+      try {
+        const parsed = new URL(String(url), location.origin);
+        parsed.searchParams.forEach((value, key) => {
+          if (Object.prototype.hasOwnProperty.call(out, key)) {
+            out[key] = `${out[key]},${value}`;
+          } else {
+            out[key] = value;
+          }
+        });
+      } catch (e) {
+        const query = String(url).split('?')[1] || '';
+        new URLSearchParams(query.split('#')[0]).forEach((value, key) => {
+          out[key] = Object.prototype.hasOwnProperty.call(out, key) ? `${out[key]},${value}` : value;
+        });
+      }
+      return out;
+    };
+
+    const normalizeParamMap = (input) => {
+      if (!input) return {};
+      if (typeof URLSearchParams !== 'undefined' && input instanceof URLSearchParams) {
+        const out = {};
+        input.forEach((value, key) => {
+          out[key] = Object.prototype.hasOwnProperty.call(out, key) ? `${out[key]},${value}` : value;
+        });
+        return out;
+      }
+      if (input && input.__isFormData && Array.isArray(input.entries)) {
+        const out = {};
+        input.entries.forEach((entry) => {
+          if (!entry || !entry.key) return;
+          out[entry.key] = normalizeFillValue(entry.value);
+        });
+        return out;
+      }
+      if (typeof input === 'object' && !Array.isArray(input)) {
+        return Object.keys(input).reduce((out, key) => {
+          out[key] = normalizeFillValue(input[key]);
+          return out;
+        }, {});
+      }
+      if (typeof input === 'string') {
+        const text = input.trim();
+        if (!text) return {};
+        if (text.startsWith('{')) {
+          try {
+            return normalizeParamMap(JSON.parse(text));
+          } catch (e) {
+            return {};
+          }
+        }
+        if (text.includes('=')) {
+          const out = {};
+          new URLSearchParams(text).forEach((value, key) => {
+            out[key] = Object.prototype.hasOwnProperty.call(out, key) ? `${out[key]},${value}` : value;
+          });
+          return out;
+        }
+      }
+      return {};
+    };
+
+    const findValueInputByKey = (scope, key) => {
+      if (!scope || !key) return null;
+      const inputs = Array.from(scope.querySelectorAll('input'));
+      const keyInput = inputs.find((el) => (el.value || '').trim() === key && el.disabled);
+      if (!keyInput) return null;
+
+      const isValueCandidate = (el) => {
+        if (!el || el === keyInput) return false;
+        if (el.disabled) return false;
+        if (el.type === 'hidden') return false;
+        if (el.classList && el.classList.contains('ant-input-disabled')) return false;
+        return true;
+      };
+
+      const row =
+        keyInput.closest('.ant-row') ||
+        keyInput.closest('.key-value-wrap') ||
+        keyInput.parentElement ||
+        scope;
+      const rowInputs = Array.from((row || scope).querySelectorAll('input'));
+      const idx = rowInputs.indexOf(keyInput);
+      if (idx >= 0) {
+        const after = rowInputs.slice(idx + 1).filter(isValueCandidate);
+        if (after.length) return after[0];
+      }
+      return rowInputs.find(isValueCandidate) || null;
+    };
+
+    const fillKeyValueMap = (scope, values) => {
+      if (!scope || !values || typeof values !== 'object') return 0;
+      let filled = 0;
+      Object.keys(values).forEach((key) => {
+        const input = findValueInputByKey(scope, key);
+        if (!input) return;
+        setInputValue(input, normalizeFillValue(values[key]));
+        filled++;
+      });
+      return filled;
+    };
+
+    const extractPathOnly = (url) => {
+      const raw = String(url || '').trim();
+      if (!raw) return '';
+      const noHash = raw.split('#')[0];
+      const noQuery = noHash.split('?')[0];
+      try {
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(noQuery)) {
+          return decodeURIComponent(new URL(noQuery).pathname || '/');
+        }
+        if (noQuery.startsWith('//')) {
+          return decodeURIComponent(new URL(location.protocol + noQuery).pathname || '/');
+        }
+      } catch (e) {
+        // fallback below
+      }
+      const path = noQuery.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]+/, '');
+      return decodeURIComponent(path.startsWith('/') ? path : '/' + path);
+    };
+
+    const escapeRegExp = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const extractPathValues = (templateUrl, actualUrl) => {
+      const templatePath = extractPathOnly(templateUrl);
+      const actualPath = extractPathOnly(actualUrl);
+      const names = [];
+      let pattern = '^';
+      let last = 0;
+      const re = /\{([^}]+)\}/g;
+      let match;
+      while ((match = re.exec(templatePath))) {
+        const name = String(match[1] || '').trim();
+        if (!name) continue;
+        pattern += escapeRegExp(templatePath.slice(last, match.index));
+        pattern += '([^/]+)';
+        names.push(name);
+        last = match.index + match[0].length;
+      }
+      pattern += escapeRegExp(templatePath.slice(last)) + '$';
+      if (!names.length) return {};
+
+      const matched = actualPath.match(new RegExp(pattern));
+      if (!matched) return {};
+      return names.reduce((out, name, index) => {
+        out[name] = decodeURIComponent(matched[index + 1] || '');
+        return out;
+      }, {});
+    };
+
+    const requestBodyToText = (body) => {
+      if (body == null) return '';
+      if (typeof body === 'string') {
+        const text = body.trim();
+        if (text.startsWith('{') || text.startsWith('[')) {
+          try {
+            return JSON.stringify(JSON.parse(text), null, 2);
+          } catch (e) {
+            return body;
+          }
+        }
+        return body;
+      }
+      if (body && body.__isFormData) return '';
+      try {
+        return JSON.stringify(body, null, 2);
+      } catch (e) {
+        return String(body);
+      }
+    };
+
+    const fillRequestBody = (root, bodyValue) => {
+      if (bodyValue == null || bodyValue === '') return 0;
+      const scope =
+        findCollapseScope(root, [/BODY/i, /Body/i, /请求体/, /请求 Body/i, /BODY PARAMETERS/i]) ||
+        root;
+
+      const bodyMap = normalizeParamMap(bodyValue);
+      const mapFilled = fillKeyValueMap(scope, bodyMap);
+      if (mapFilled) return mapFilled;
+
+      const text = requestBodyToText(bodyValue);
+      if (!text) return 0;
+
+      const textarea = Array.from(scope.querySelectorAll('textarea')).find(isVisibleElement);
+      if (textarea) {
+        setInputValue(textarea, text);
+        return 1;
+      }
+
+      const editable = Array.from(scope.querySelectorAll('[contenteditable="true"]')).find(
+        isVisibleElement
+      );
+      if (editable) {
+        setEditableText(editable, text);
+        return 1;
+      }
+
+      return 0;
+    };
+
+    const refillHistoryEntry = (entry) => {
+      const root = document.querySelector('.interface-test.postman');
+      if (!root || !entry) {
+        return { ok: false, message: '未找到 YApi 运行面板' };
+      }
+
+      const stats = { path: 0, query: 0, headers: 0, body: 0 };
+      const urlBar = root.querySelector('.url');
+      const urlInput = urlBar ? urlBar.querySelector('input.ant-input') : null;
+      const method = String(entry.method || '').toUpperCase();
+
+      if (urlInput) {
+        const pathValues = extractPathValues(urlInput.value || '', entry.url || '');
+        Object.keys(pathValues).forEach((name) => {
+          const input = findPathParamValueInput(root, name);
+          if (!input) return;
+          setInputValue(input, pathValues[name]);
+          try {
+            sessionStorage.setItem(buildPathParamStorageKey(name), pathValues[name]);
+          } catch (e) {
+            // ignore
+          }
+          stats.path++;
+        });
+      }
+
+      const queryScope =
+        findCollapseScope(root, [/QUERY/i, /Query/i, /查询参数/, /请求参数/]) || root;
+      const queryValues = {
+        ...parseUrlSearchParams(entry.url),
+        ...((method === 'GET' || method === 'HEAD') ? normalizeParamMap(entry.body) : {})
+      };
+      stats.query = fillKeyValueMap(queryScope, queryValues);
+
+      const headerScope =
+        findCollapseScope(root, [/HEADER/i, /Header/i, /请求头/, /HEADERS/i]) || root;
+      stats.headers = fillKeyValueMap(headerScope, normalizeParamMap(entry.headers || {}));
+
+      if (method !== 'GET' && method !== 'HEAD') {
+        stats.body = fillRequestBody(root, entry.body);
+      }
+
+      const total = stats.path + stats.query + stats.headers + stats.body;
+      if (!total) {
+        return { ok: false, message: '没有找到可回填的输入项' };
+      }
+
+      const parts = [];
+      if (stats.path) parts.push(`路径 ${stats.path}`);
+      if (stats.query) parts.push(`Query ${stats.query}`);
+      if (stats.headers) parts.push(`Header ${stats.headers}`);
+      if (stats.body) parts.push(`Body ${stats.body}`);
+      return { ok: true, message: `已回填：${parts.join('，')}` };
+    };
+
+    const tokenizeCurl = (curlText) => {
+      const text = String(curlText || '').replace(/\\\r?\n/g, ' ');
+      const tokens = [];
+      let current = '';
+      let quote = null;
+      let escaped = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (escaped) {
+          current += ch;
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\' && quote !== "'") {
+          escaped = true;
+          continue;
+        }
+        if (quote) {
+          if (ch === quote) {
+            quote = null;
+          } else {
+            current += ch;
+          }
+          continue;
+        }
+        if (ch === '"' || ch === "'") {
+          quote = ch;
+          continue;
+        }
+        if (/\s/.test(ch)) {
+          if (current) {
+            tokens.push(current);
+            current = '';
+          }
+          continue;
+        }
+        current += ch;
+      }
+      if (current) tokens.push(current);
+      return tokens;
+    };
+
+    const parseCurlCommand = (curlText) => {
+      const tokens = tokenizeCurl(curlText);
+      if (!tokens.length || tokens[0] !== 'curl') {
+        throw new Error('请输入以 curl 开头的命令');
+      }
+
+      const headers = {};
+      const bodyParts = [];
+      let method = '';
+      let url = '';
+
+      const readNext = (index) => (index + 1 < tokens.length ? tokens[index + 1] : '');
+
+      for (let i = 1; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (!token) continue;
+
+        if (token === '-X' || token === '--request') {
+          method = readNext(i).toUpperCase();
+          i++;
+          continue;
+        }
+        if (token.startsWith('-X') && token.length > 2) {
+          method = token.slice(2).toUpperCase();
+          continue;
+        }
+
+        if (token === '-H' || token === '--header') {
+          const raw = readNext(i);
+          const colon = raw.indexOf(':');
+          if (colon > 0) {
+            const key = raw.slice(0, colon).trim();
+            const value = raw.slice(colon + 1).trim();
+            if (key) headers[key] = value;
+          }
+          i++;
+          continue;
+        }
+
+        if (
+          token === '-d' ||
+          token === '--data' ||
+          token === '--data-raw' ||
+          token === '--data-binary' ||
+          token === '--data-urlencode'
+        ) {
+          bodyParts.push(readNext(i));
+          i++;
+          continue;
+        }
+        if (token.startsWith('--data-raw=')) {
+          bodyParts.push(token.slice('--data-raw='.length));
+          continue;
+        }
+        if (token.startsWith('--data=')) {
+          bodyParts.push(token.slice('--data='.length));
+          continue;
+        }
+
+        if (token === '--url') {
+          url = readNext(i);
+          i++;
+          continue;
+        }
+        if (token.startsWith('--url=')) {
+          url = token.slice('--url='.length);
+          continue;
+        }
+
+        if (token.startsWith('-')) {
+          const optionsWithValue = new Set([
+            '-A',
+            '--user-agent',
+            '-b',
+            '--cookie',
+            '-u',
+            '--user',
+            '--connect-timeout',
+            '--max-time'
+          ]);
+          if (optionsWithValue.has(token)) i++;
+          continue;
+        }
+
+        url = token;
+      }
+
+      const body = bodyParts.length > 1 ? bodyParts.join('&') : bodyParts[0];
+      if (!method) method = bodyParts.length ? 'POST' : 'GET';
+      if (!url) throw new Error('cURL 中没有找到 URL');
+
+      return { url, method, headers, body };
+    };
+
+    const showRefillToast = (msg) => {
+      const existing = document.getElementById('crm-toast');
+      if (existing) existing.remove();
+      const toast = document.createElement('div');
+      toast.id = 'crm-toast';
+      toast.textContent = String(msg || '');
+      toast.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:8px 20px;background:#fff;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);font-size:13px;color:#333;pointer-events:none;';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2000);
+    };
+
+    if (!window.__crmCurlRefillListenerInstalled) {
+      window.__crmCurlRefillListenerInstalled = true;
+      window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+        const data = event.data;
+        if (!data || data.__crossRequestMaster !== true || data.type !== 'cross-request-refill-curl') {
+          return;
+        }
+
+        try {
+          const entry = parseCurlCommand(data.curl || '');
+          const result = refillHistoryEntry(entry);
+          showRefillToast(result.ok ? '回填成功' : result.message);
+        } catch (e) {
+          showRefillToast(e && e.message ? e.message : 'cURL 解析失败');
+        }
+      });
+    }
 
     const buildPathParamStorageKey = (paramName) => {
       const route = parseYapiInterfaceRoute();
@@ -735,12 +1205,22 @@ const CrossRequest = {
             <div style="margin-bottom:6px;"><b>Body:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;">${escHtml(typeof entry.body === 'string' ? entry.body : JSON.stringify(entry.body, null, 2))}</pre></div>
             <div style="margin-bottom:6px;"><b>Response:</b><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;max-height:160px;overflow:auto;">${escHtml(String(entry.response.body || ''))}</pre></div>
             <div style="display:flex;gap:8px;margin-top:8px;">
+              <button class="crm-history-action-btn" data-action="refill">回填参数</button>
               <button class="crm-history-action-btn" data-action="curl">复制 cURL</button>
             </div>
           `;
           item.appendChild(detail);
 
           // 按钮事件
+          detail.querySelector('[data-action="refill"]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const result = refillHistoryEntry(entry);
+            showToast(result.ok ? '回填成功' : result.message);
+            if (result.ok) {
+              modal.style.display = 'none';
+            }
+          });
+
           detail.querySelector('[data-action="curl"]').addEventListener('click', async (e) => {
             e.stopPropagation();
             await safeWriteClipboard(generateCurl(entry));

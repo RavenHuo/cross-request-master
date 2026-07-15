@@ -50,6 +50,8 @@
   debugLog('[Index] index.js 脚本开始执行（' + (isSilentMode ? '静默' : '完整') + '模式）');
 
   // 请求历史存储 key（按项目+接口隔离）
+  const MAX_REQUEST_HISTORY = 10;
+
   const getHistoryKey = () => {
     try {
       const path = win.location.pathname;
@@ -67,21 +69,30 @@
     try {
       const raw = win.localStorage.getItem(key);
       const list = raw ? JSON.parse(raw) : [];
+      const hasData = Object.prototype.hasOwnProperty.call(requestData, 'data');
+      const hasBody = Object.prototype.hasOwnProperty.call(requestData, 'body');
+      const requestBody = hasData ? requestData.data : hasBody ? requestData.body : null;
+      const responseBody =
+        typeof response.body === 'string'
+          ? response.body
+          : Object.prototype.hasOwnProperty.call(response, 'body')
+            ? JSON.stringify(response.body)
+            : JSON.stringify(response.data || '');
+      const responseBodyText = responseBody == null ? '' : responseBody;
       const entry = {
         timestamp: Date.now(),
         url: requestData.url,
         method: requestData.method,
         headers: requestData.headers || {},
-        body: requestData.data || requestData.body || null,
+        body: requestBody,
         response: {
           status: response.status || 0,
           statusText: response.statusText || '',
-          body: typeof response.body === 'string' ? response.body.slice(0, 32768)
-            : JSON.stringify(response.body || response.data || '').slice(0, 32768)
+          body: responseBodyText.slice(0, 32768)
         }
       };
       list.unshift(entry);
-      if (list.length > 20) list.length = 20;
+      if (list.length > MAX_REQUEST_HISTORY) list.length = MAX_REQUEST_HISTORY;
       win.localStorage.setItem(key, JSON.stringify(list));
     } catch (e) { /* ignore */ }
   };
@@ -1198,9 +1209,9 @@
     }, 5000);
   }
 
-  // 自动隐藏定时器
-  let curlHideTimer = null;
   const CURL_INLINE_HOST_ID = 'cross-request-curl-inline-host';
+  let curlDisplayClosedByUser = false;
+  let curlDisplayLastHref = win.location && win.location.href ? win.location.href : '';
 
   // 创建页面内的 cURL 显示框
   function createCurlDisplay() {
@@ -1262,7 +1273,7 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
             font-family: 'Monaco', 'Menlo', monospace;
             font-size: 12px;
-            display: none;
+            display: block;
             overflow: hidden;
             opacity: 1;
             transition: opacity 0.2s ease-out;
@@ -1280,7 +1291,7 @@
             font-family: 'Monaco', 'Menlo', monospace;
             font-size: 12px;
             z-index: 10000;
-            display: none;
+            display: block;
             overflow: hidden;
             opacity: 1;
             transition: opacity 0.3s ease-out;
@@ -1289,12 +1300,13 @@
     curlDisplay.innerHTML = `
             <div style="padding: 12px; background: #4a5568; border-bottom: 1px solid #718096; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: bold; color: #68d391;">cURL 命令</span>
-                <div>
-                    <button id="curl-copy-btn" style="background: #48bb78; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 4px; font-size: 11px;">复制</button>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                    <button id="curl-copy-btn" style="background: #48bb78; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">复制</button>
+                    <button id="curl-refill-btn" style="background: #1677ff; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">回填参数</button>
                     <button id="curl-close-btn" style="background: #f56565; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">×</button>
                 </div>
             </div>
-            <pre id="curl-command-text" style="margin: 0; padding: 12px; white-space: pre-wrap; word-break: break-all; overflow-y: auto; max-height: 200px; line-height: 1.4;"></pre>
+            <textarea id="curl-command-text" spellcheck="false" placeholder="在这里粘贴或编辑 cURL 命令" style="display: block; box-sizing: border-box; width: 100%; min-height: 108px; margin: 0; padding: 12px; border: 0; outline: none; resize: vertical; background: #2d3748; color: #e2e8f0; white-space: pre; overflow: auto; line-height: 1.4; font: inherit;"></textarea>
         `;
 
     if (mount.mountNode) {
@@ -1312,25 +1324,47 @@
 
   // 绑定 cURL 显示框事件（防止事件丢失）
   function bindCurlDisplayEvents() {
+    const refillBtn = document.getElementById('curl-refill-btn');
     const copyBtn = document.getElementById('curl-copy-btn');
     const closeBtn = document.getElementById('curl-close-btn');
+    const curlText = document.getElementById('curl-command-text');
 
-    if (!copyBtn || !closeBtn) {
+    if (!refillBtn || !copyBtn || !closeBtn || !curlText) {
       console.warn('[Index] cURL 显示框按钮元素未找到');
       return;
     }
 
     // 清除旧的事件监听器（如果存在）
+    refillBtn.onclick = null;
     copyBtn.onclick = null;
     closeBtn.onclick = null;
+    curlText.oninput = null;
+
+    curlText.addEventListener('input', () => {
+      curlText.setAttribute('data-user-edited', 'true');
+    });
+
+    refillBtn.addEventListener('click', () => {
+      debugLog('[Index] cURL 回填按钮被点击');
+      window.postMessage(
+        {
+          __crossRequestMaster: true,
+          type: 'cross-request-refill-curl',
+          curl: curlText.value || ''
+        },
+        window.location && window.location.origin && window.location.origin !== 'null'
+          ? window.location.origin
+          : '*'
+      );
+    });
 
     // 重新绑定事件
     copyBtn.addEventListener('click', async () => {
-      const curlText = document.getElementById('curl-command-text').textContent;
+      const text = curlText.value || '';
 
       debugLog('[Index] 复制按钮被点击');
       // 使用现代复制方法
-      const success = await copyToClipboard(curlText);
+      const success = await copyToClipboard(text);
       if (success) {
         copyBtn.textContent = '已复制';
         setTimeout(() => {
@@ -1345,58 +1379,63 @@
     });
 
     closeBtn.addEventListener('click', () => {
-      debugLog('[Index] 关闭按钮被点击');
-      hideCurlDisplay();
+      const curlDisplay = document.getElementById('cross-request-curl-display');
+      if (curlDisplay) {
+        curlDisplayClosedByUser = true;
+        curlDisplay.style.display = 'none';
+      }
     });
 
     debugLog('[Index] cURL 显示框事件已重新绑定');
-  }
-
-  // 隐藏 cURL 显示框
-  function hideCurlDisplay() {
-    const curlDisplay = document.getElementById('cross-request-curl-display');
-    if (curlDisplay) {
-      // 清除现有定时器
-      if (curlHideTimer) {
-        clearTimeout(curlHideTimer);
-        curlHideTimer = null;
-      }
-
-      // 淡出动画
-      curlDisplay.style.opacity = '0';
-      setTimeout(() => {
-        curlDisplay.style.display = 'none';
-        curlDisplay.style.opacity = '1'; // 重置透明度，为下次显示做准备
-      }, 300);
-    }
-  }
-
-  // 设置自动隐藏定时器
-  function setAutoHideTimer() {
-    // 清除现有定时器
-    if (curlHideTimer) {
-      clearTimeout(curlHideTimer);
-    }
-
-    const curlDisplay = document.getElementById('cross-request-curl-display');
-    const mode = curlDisplay ? curlDisplay.getAttribute('data-mode') : 'overlay';
-    // 内嵌到页面中就不自动隐藏，避免用户找不到刚才生成的 cURL
-    if (mode === 'inline') {
-      curlHideTimer = null;
-      return;
-    }
-
-    // 设置新的3秒定时器
-    curlHideTimer = setTimeout(() => {
-      hideCurlDisplay();
-      curlHideTimer = null;
-    }, 3000);
   }
 
   // 显示 cURL 命令
   function showCurlCommand(requestData) {
     // 直接显示（不再支持“永久关闭”）
     displayCurlCommand(requestData);
+  }
+
+  function getInitialCurlCommand() {
+    try {
+      if (!isYapiContext()) return '';
+      const root = document.querySelector('.interface-test.postman');
+      const urlInput = root && root.querySelector('.url input.ant-input');
+      const url = urlInput && urlInput.value ? urlInput.value.trim() : '';
+      if (!url) return '';
+      return generateCurlCommand(url, 'GET', {}, null);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function ensurePersistentCurlDisplay() {
+    if (isSilentMode) return;
+    const currentHref = win.location && win.location.href ? win.location.href : '';
+    if (currentHref !== curlDisplayLastHref) {
+      curlDisplayLastHref = currentHref;
+      curlDisplayClosedByUser = false;
+    }
+    if (curlDisplayClosedByUser) return;
+
+    if (isYapiContext()) {
+      const root = document.querySelector('.interface-test.postman');
+      const urlBar = root && root.querySelector('.url');
+      if (!root || !urlBar) return;
+    }
+
+    const curlDisplay = createCurlDisplay();
+    if (!curlDisplay) return;
+    curlDisplay.style.display = 'block';
+    curlDisplay.style.opacity = '1';
+
+    const curlText = document.getElementById('curl-command-text');
+    if (
+      curlText &&
+      !curlText.value &&
+      curlText.getAttribute('data-user-edited') !== 'true'
+    ) {
+      curlText.value = getInitialCurlCommand();
+    }
   }
 
   // 显示 cURL 弹窗（由 content script 调用）
@@ -1409,6 +1448,7 @@
       return;
     }
     debugLog('[Index] cURL 显示框已创建/获取');
+    curlDisplayClosedByUser = false;
 
     const curlCommand = generateCurlCommand(
       requestData.url,
@@ -1425,7 +1465,8 @@
     }
 
     // 更新内容并显示
-    curlText.textContent = curlCommand;
+    curlText.value = curlCommand;
+    curlText.setAttribute('data-user-edited', 'false');
     curlDisplay.style.display = 'block';
     curlDisplay.style.opacity = '1'; // 确保透明度正确
 
@@ -1435,9 +1476,6 @@
     setTimeout(() => {
       bindCurlDisplayEvents();
     }, 100);
-
-    // 设置自动隐藏定时器
-    setAutoHideTimer();
 
     debugLog('[Index] cURL 弹窗显示完成');
   }
@@ -1450,6 +1488,11 @@
   });
 
   debugLog('[Index] curl-show-command 事件监听器已注册');
+
+  if (!isSilentMode) {
+    ensurePersistentCurlDisplay();
+    setInterval(ensurePersistentCurlDisplay, 800);
+  }
 
   // 创建兼容的 jQuery ajax 方法
   function createAjaxMethod() {
