@@ -204,28 +204,7 @@ const CrossRequest = {
         #${HEADER_MODAL_ID} .crm-btn.crm-danger:hover { background: #fee2e2; }
         #${HEADER_MODAL_ID} .crm-tools { display: flex; gap: 8px; align-items: center; margin: 6px 0 10px; }
 
-        /* 沉浸式文档查看模式 */
-        body.crm-doc-immersive [data-crm-section="basic"],
-        body.crm-doc-immersive [data-crm-section="req"],
-        body.crm-doc-immersive [data-crm-section="res"] {
-          display: none !important;
-        }
-        /* 收掉 YApi .caseContainer 顶部内边距 + 备注 h2 默认 margin-top，
-           让备注 iframe 直接紧贴 tab bar，不留空白带；同时把"备注"标题文字隐掉，
-           因为沉浸态下视野里只有文档，没必要重复说"这是备注" */
-        body.crm-doc-immersive .caseContainer { padding-top: 12px !important; }
-        body.crm-doc-immersive .caseContainer > h2.interface-title { margin-top: 0 !important; }
-        body.crm-doc-immersive h2.interface-title[data-crm-section="notes"] { display: none !important; }
-        #crm-exit-immersive {
-          position: fixed; top: 16px; right: 16px;
-          z-index: 2147483647;
-          padding: 6px 12px;
-          background: #fff; border: 1px solid #d0d7de;
-          border-radius: 6px; font-size: 12px; cursor: pointer;
-          color: #24292f;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        #crm-exit-immersive:hover { background: #f6f8fa; }
+
 
         #${HEADER_MODAL_ID} .crm-history-action-btn { height: 26px; padding: 0 10px; border-radius: 4px; border: 1px solid #d9d9d9; background: #fff; color: #595959; font-size: 11px; cursor: pointer; }
         #${HEADER_MODAL_ID} .crm-history-action-btn:hover { border-color: #1677ff; color: #1677ff; }
@@ -1674,100 +1653,6 @@ npx skills add https://clawhub.37ops.com/huoruiwen/yapi -y -g`;
       }
     };
 
-    // ===== 沉浸式文档查看模式 =====
-    const IMMERSIVE_BTN_ID = 'crm-exit-immersive';
-    const IMMERSIVE_CLASS = 'crm-doc-immersive';
-    const immersiveCache = new Map();      // apiId -> 'yes' | 'no' | 'exitedByUser'
-    const immersiveInflight = new Set();
-
-    const tagSectionsIfPresent = () => {
-      const ns = (typeof window !== 'undefined' && window.YapiDocImmersive) || null;
-      if (!ns || typeof ns.tagSections !== 'function') return;
-      try {
-        ns.tagSections(document);
-      } catch (_e) {
-        // DOM 还没 ready 等情况，沉默退化
-      }
-    };
-
-    const removeExitImmersiveBtn = () => {
-      const btn = document.getElementById(IMMERSIVE_BTN_ID);
-      if (btn) btn.remove();
-    };
-
-    const ensureExitImmersiveBtn = (apiId) => {
-      if (document.getElementById(IMMERSIVE_BTN_ID)) return;
-      const btn = document.createElement('button');
-      btn.id = IMMERSIVE_BTN_ID;
-      btn.type = 'button';
-      btn.textContent = '↩ 退出沉浸式';
-      btn.addEventListener('click', () => {
-        // 竞态防护：用户在 SPA 已切到别的 apiId 但 tick 还没清理掉这个浮层时点击 →
-        // 仅自清理本浮层，不影响新页面的沉浸态、也不污染新 apiId 的 cache。
-        const currentRoute = parseYapiInterfaceRoute();
-        if (!currentRoute || currentRoute.apiId !== apiId) {
-          removeExitImmersiveBtn();
-          return;
-        }
-        exitImmersive(apiId);
-      });
-      document.body.appendChild(btn);
-    };
-
-    const enterImmersive = (apiId) => {
-      document.body.classList.add(IMMERSIVE_CLASS);
-      ensureExitImmersiveBtn(apiId);
-    };
-
-    const exitImmersive = (apiId) => {
-      document.body.classList.remove(IMMERSIVE_CLASS);
-      removeExitImmersiveBtn();
-      if (apiId) immersiveCache.set(apiId, 'exitedByUser');
-    };
-
-    const checkImmersive = async () => {
-      const route = parseYapiInterfaceRoute();
-      if (!route) {
-        if (document.body.classList.contains(IMMERSIVE_CLASS)) {
-          document.body.classList.remove(IMMERSIVE_CLASS);
-          removeExitImmersiveBtn();
-        }
-        return;
-      }
-      const apiId = route.apiId;
-      const cached = immersiveCache.get(apiId);
-      if (cached === 'exitedByUser') return;
-      if (cached === 'yes') {
-        tagSectionsIfPresent();
-        enterImmersive(apiId);
-        return;
-      }
-      if (cached === 'no') return;
-      if (immersiveInflight.has(apiId)) return;
-
-      const ns = (typeof window !== 'undefined' && window.YapiDocImmersive) || null;
-      if (!ns || typeof ns.isImmersiveDoc !== 'function') return;
-
-      immersiveInflight.add(apiId);
-      try {
-        const data = await fetchInterfaceDetail(location.origin, apiId);
-        // 竞态防护：await 期间 SPA 可能切到别的 apiId
-        const currentRoute = parseYapiInterfaceRoute();
-        if (!currentRoute || currentRoute.apiId !== apiId) return;
-
-        const isDoc = ns.isImmersiveDoc(data);
-        immersiveCache.set(apiId, isDoc ? 'yes' : 'no');
-        if (isDoc) {
-          tagSectionsIfPresent();
-          enterImmersive(apiId);
-        }
-      } catch (_e) {
-        // 网络失败：不写 cache，下次 tick 重试
-      } finally {
-        immersiveInflight.delete(apiId);
-      }
-    };
-
     const mountButtons = () => {
       const route = parseYapiInterfaceRoute();
       if (!route) return;
@@ -1824,14 +1709,11 @@ npx skills add https://clawhub.37ops.com/huoruiwen/yapi -y -g`;
         const old = document.getElementById(BTN_GROUP_ID);
         if (old) old.remove();
         // URL 变化：清理上一文档的沉浸态
-        document.body.classList.remove(IMMERSIVE_CLASS);
-        removeExitImmersiveBtn();
+
       }
       mountButtons();
       mountHeaderButton();
       ensureSendClickIntercept();
-      tagSectionsIfPresent();
-      checkImmersive();
     };
 
     tick();
@@ -1851,7 +1733,6 @@ npx skills add https://clawhub.37ops.com/huoruiwen/yapi -y -g`;
       'src/helpers/fixed-headers.js',
       'src/helpers/body-parser.js',
       'src/helpers/form-data.js',
-      'src/helpers/yapi-openapi.js',
       'src/helpers/logger.js',
       'src/helpers/response-handler.js' // 必须在 body-parser.js 之后（有依赖）
     ];

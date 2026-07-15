@@ -127,8 +127,6 @@ pnpm format
 │   ├── query-string.js        # 查询字符串处理
 │   ├── request-headers.js     # 请求头过滤，移除 fetch 不允许设置的 Header
 │   ├── response-handler.js    # 响应对象整理
-│   ├── yapi-doc-immersive.js  # YApi 文档型接口的沉浸式展示判定
-│   └── yapi-openapi.js        # YApi OpenAPI 客户端封装
 ├── tests/                     # Jest 单元测试
 ├── types/cross-request.d.ts   # TypeScript 全局类型定义
 ├── icons/                     # 扩展图标
