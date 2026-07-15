@@ -16,7 +16,7 @@ Cross Request Master 是一个面向 YApi 和接口调试场景的 Chrome 扩展
 
 下载扩展安装包：
 
-[18b4e00205ba26e4ed6d44af8b726af8.zip](https://sy-ht-storage.39on.com/sy_admin_public/18b4e00205ba26e4ed6d44af8b726af8.zip)
+[yapi-cross-request.zip](https://sy-ht-storage.39on.com/sy_admin_public/18b4e00205ba26e4ed6d44af8b726af8.zip)
 
 然后打开 Chrome 扩展管理页：
 
